@@ -694,7 +694,13 @@ tls13_receive_key_update(SSL *ssl)
 	if (key_update_request == SSL_KEY_UPDATE_REQUESTED &&
 	    !S3I(ssl)->key_update_pending) {
 		CBB cbb, body;
-		if (!CBB_add_u8(&body, SSL_KEY_UPDATE_NOT_REQUESTED) ||
+
+		if (
+#if 0 /* XXX XXX XXX SSLV3 disentangling */
+		    !ssl->method->internal->init_message(ssl, &cbb, &body,
+		    SSL3_MT_KEY_UPDATE) ||
+#endif
+		    !CBB_add_u8(&body, SSL_KEY_UPDATE_NOT_REQUESTED) ||
 		    !ssl_add_message_cbb(ssl, &cbb) ||
 		    !tls13_rotate_traffic_key(ssl, evp_aead_seal)) {
 			CBB_cleanup(&cbb);
@@ -713,8 +719,7 @@ tls13_receive_key_update(SSL *ssl)
 	return 1;
 }
 
-#if 0
-
+#if 0 /* XXX XXX XXX SSLV3 disentangling */
 int
 tls13_post_handshake(SSL *ssl)
 {
