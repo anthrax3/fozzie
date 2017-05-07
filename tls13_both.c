@@ -582,17 +582,19 @@ tls13_add_certificate_verify(SSL_HANDSHAKE *hs, int is_first_run)
 	const size_t max_sig_len = EVP_PKEY_size(hs->local_pubkey);
 	enum ssl_private_key_result_t sign_result;
 	uint8_t *msg = NULL, *sig = NULL;
-	uint16_t signature_algorithm;
+	uint16_t signature_algorithm = 0;
 	SSL *const ssl = hs->ssl;
 	size_t msg_len, sig_len;
 	CBB cbb, body, child;
 
 
-	CBB_init(&cbb);
+#if 0 /* XXX XXX XXX */
+	CBB_zero(&cbb);
 	if (!tls1_choose_signature_algorithm(hs, &signature_algorithm)) {
 		goto err;
 	}
-	if (!ssl->method->init_message(ssl, &cbb, &body,
+#endif
+	if (!ssl->method->internal->init_message(ssl, &cbb, &body,
 	    SSL3_MT_CERTIFICATE_VERIFY) ||
 	    !CBB_add_u16(&body, signature_algorithm)) {
 		SSLerror(ssl, ERR_R_INTERNAL_ERROR);
@@ -640,7 +642,7 @@ tls13_add_certificate_verify(SSL_HANDSHAKE *hs, int is_first_run)
 err:
 	free(sig);
 	CBB_cleanup(&cbb);
-	OPENSSL_free(msg);
+	free(msg);
 	return ret;
 }
 
@@ -710,7 +712,6 @@ tls13_receive_key_update(SSL *ssl)
 		 */
 		ssl->s3->key_update_pending = 1;
 	}
-
 	return 1;
 }
 

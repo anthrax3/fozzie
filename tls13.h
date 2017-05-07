@@ -98,3 +98,48 @@ int tls13_write_psk_binder(SSL_HANDSHAKE *hs, uint8_t *msg, size_t len);
  */
 int tls13_verify_psk_binder(SSL_HANDSHAKE *hs, SSL_SESSION *session,
                             CBS *binders);
+
+
+/* XXX sigh */
+enum ssl_private_key_result_t {
+	ssl_private_key_success,
+	ssl_private_key_retry,
+	ssl_private_key_failure,
+};
+
+enum ssl_private_key_result_t ssl_private_key_sign(
+    SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
+    uint16_t signature_algorithm, const uint8_t *in, size_t in_len);
+
+enum ssl_private_key_result_t ssl_private_key_decrypt(
+    SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
+    const uint8_t *in, size_t in_len);
+
+enum ssl_private_key_result_t ssl_private_key_complete(SSL *ssl, uint8_t *out,
+                                                       size_t *out_len,
+                                                       size_t max_out);
+
+/* ssl_private_key_supports_signature_algorithm returns one if |hs|'s private                         
+ * key supports |sigalg| and zero otherwise. */
+int ssl_private_key_supports_signature_algorithm(SSL_HANDSHAKE *hs,
+                                                 uint16_t sigalg);
+
+/* ssl_public_key_verify verifies that the |signature| is valid for the public                        
+ * key |pkey| and input |in|, using the |signature_algorithm| specified. */
+int ssl_public_key_verify(
+    SSL *ssl, const uint8_t *signature, size_t signature_len,
+    uint16_t signature_algorithm, EVP_PKEY *pkey,
+    const uint8_t *in, size_t in_len);
+
+static inline int
+ssl_add_message_cbb(SSL *ssl, CBB *cbb)
+{
+  uint8_t *msg;
+  size_t len;
+  if (!ssl->method->internal->finish_message(ssl, cbb, &msg, &len) ||
+      !ssl->method->internal->add_message(ssl, msg, len)) {
+    return 0;
+  }
+
+  return 1;
+}

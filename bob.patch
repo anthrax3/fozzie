@@ -10,7 +10,7 @@ RCS file: /cvs/src/lib/libssl/ssl.h,v
 retrieving revision 1.129
 diff -u -p -u -p -r1.129 ssl.h
 --- ssl.h	7 May 2017 04:22:24 -0000	1.129
-+++ ssl.h	7 May 2017 15:29:05 -0000
++++ ssl.h	7 May 2017 16:48:56 -0000
 @@ -790,6 +790,11 @@ void SSL_get0_alpn_selected(const SSL *s
  #define SSL_WRITING	2
  #define SSL_READING	3
@@ -29,12 +29,32 @@ RCS file: /cvs/src/lib/libssl/ssl_locl.h,v
 retrieving revision 1.181
 diff -u -p -u -p -r1.181 ssl_locl.h
 --- ssl_locl.h	7 May 2017 04:22:24 -0000	1.181
-+++ ssl_locl.h	7 May 2017 15:29:06 -0000
-@@ -406,6 +406,23 @@ typedef struct ssl_method_internal_st {
++++ ssl_locl.h	7 May 2017 16:48:56 -0000
+@@ -406,6 +406,43 @@ typedef struct ssl_method_internal_st {
  	long (*get_timeout)(void);
  	int (*ssl_version)(void);
  
 +	/* XXX 13 */
++	/* init_message begins a new handshake message of type
++	 * |type|. |cbb| is the root CBB to be passed into
++	 * |finish_message|. |*body| is set to a child CBB the caller should
++	 * write to. It returns one on success and zero on error.
++	 */
++	int (*init_message)(SSL *ssl, CBB *cbb, CBB *body, uint8_t type);
++	/*
++	 *finish_message finishes a handshake message. It sets
++	 * |*out_msg| to a newly-allocated buffer with the serialized
++	 * message. The caller must release it with |OPENSSL_free|
++	 * when done. It returns one on success and zero on error.
++	 */
++	int (*finish_message)(SSL *ssl, CBB *cbb, uint8_t **out_msg, size_t *out_len);
++	/*
++	 * add_message adds a handshake message to the pending
++	 * flight. It returns one on success and zero on error. In
++	 * either case, it takes ownership of |msg| and releases it
++	 * with |OPENSSL_free| when done.
++	 */
++	int (*add_message)(SSL *ssl, uint8_t *msg, size_t len);
 +	/*
 +	 * flush_flight flushes the pending flight to the
 +	 * transport. It returns one on success and <= 0 on error.
@@ -54,7 +74,7 @@ diff -u -p -u -p -r1.181 ssl_locl.h
  	struct ssl3_enc_method *ssl3_enc; /* Extra SSLv3/TLS stuff */
  } SSL_METHOD_INTERNAL;
  
-@@ -431,7 +448,42 @@ typedef struct ssl_session_internal_st {
+@@ -431,7 +468,42 @@ typedef struct ssl_session_internal_st {
  } SSL_SESSION_INTERNAL;
  #define SSI(s) (s->session->internal)
  
@@ -97,7 +117,7 @@ diff -u -p -u -p -r1.181 ssl_locl.h
  	/* state contains one of the SSL3_ST_* values. */
  	int state;
  
-@@ -444,6 +496,89 @@ typedef struct ssl_handshake_st {
+@@ -444,6 +516,95 @@ typedef struct ssl_handshake_st {
  	/* key_block is the record-layer key block for TLS 1.2 and earlier. */
  	int key_block_len;
  	unsigned char *key_block;
@@ -118,6 +138,12 @@ diff -u -p -u -p -r1.181 ssl_locl.h
 +	uint8_t client_traffic_secret_0[EVP_MAX_MD_SIZE];
 +	uint8_t server_traffic_secret_0[EVP_MAX_MD_SIZE];
 +	uint8_t expected_client_finished[EVP_MAX_MD_SIZE];
++
++	/* local_pubkey is the public key we are authenticating as. */
++	EVP_PKEY *local_pubkey;
++
++	/* peer_pubkey is the public key parsed from the peer's leaf certificate. */
++	EVP_PKEY *peer_pubkey;
 +
 +	/* XXX 13 flags */
 +	/* scts_requested is one if the SCT extension is in the ClientHello. */
