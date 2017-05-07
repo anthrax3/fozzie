@@ -4,28 +4,13 @@
 ? next_state
 ? ssl_connect
 ? state
-Index: Makefile
-===================================================================
-RCS file: /cvs/src/lib/libssl/Makefile,v
-retrieving revision 1.35
-diff -u -p -u -p -r1.35 Makefile
---- Makefile	30 Apr 2017 04:44:58 -0000	1.35
-+++ Makefile	7 May 2017 14:46:19 -0000
-@@ -4,6 +4,7 @@
- .ifndef NOMAN
- SUBDIR=	man
- .endif
-+SUBDIR+= fozzie
- 
- PC_FILES=openssl.pc libssl.pc
- 
 Index: ssl.h
 ===================================================================
 RCS file: /cvs/src/lib/libssl/ssl.h,v
 retrieving revision 1.129
 diff -u -p -u -p -r1.129 ssl.h
 --- ssl.h	7 May 2017 04:22:24 -0000	1.129
-+++ ssl.h	7 May 2017 14:46:20 -0000
++++ ssl.h	7 May 2017 15:29:05 -0000
 @@ -790,6 +790,11 @@ void SSL_get0_alpn_selected(const SSL *s
  #define SSL_WRITING	2
  #define SSL_READING	3
@@ -44,7 +29,7 @@ RCS file: /cvs/src/lib/libssl/ssl_locl.h,v
 retrieving revision 1.181
 diff -u -p -u -p -r1.181 ssl_locl.h
 --- ssl_locl.h	7 May 2017 04:22:24 -0000	1.181
-+++ ssl_locl.h	7 May 2017 14:46:20 -0000
++++ ssl_locl.h	7 May 2017 15:29:06 -0000
 @@ -406,6 +406,23 @@ typedef struct ssl_method_internal_st {
  	long (*get_timeout)(void);
  	int (*ssl_version)(void);
@@ -69,7 +54,7 @@ diff -u -p -u -p -r1.181 ssl_locl.h
  	struct ssl3_enc_method *ssl3_enc; /* Extra SSLv3/TLS stuff */
  } SSL_METHOD_INTERNAL;
  
-@@ -431,7 +448,49 @@ typedef struct ssl_session_internal_st {
+@@ -431,7 +448,42 @@ typedef struct ssl_session_internal_st {
  } SSL_SESSION_INTERNAL;
  #define SSI(s) (s->session->internal)
  
@@ -109,20 +94,30 @@ diff -u -p -u -p -r1.181 ssl_locl.h
 +	 */
 +	enum ssl_hs_wait_t wait;
 +
-+	/*
-+	 * tls13_state is the internal state for the TLS 1.3
-+	 * handshake. Its values depend on |do_tls13_handshake| but the
-+	 * starting state is always zero.
-+	 */
-+	int tls13_state;
-+
  	/* state contains one of the SSL3_ST_* values. */
  	int state;
  
-@@ -444,6 +503,72 @@ typedef struct ssl_handshake_st {
+@@ -444,6 +496,89 @@ typedef struct ssl_handshake_st {
  	/* key_block is the record-layer key block for TLS 1.2 and earlier. */
  	int key_block_len;
  	unsigned char *key_block;
++
++	/* XXX 13 */
++
++	/* tls13_state is the internal state for the TLS 1.3
++	 * handshake. Its values depend on |do_tls13_handshake| but
++	 * the starting state is always zero.
++	 */
++	int tls13_state;
++
++	size_t hash_len;
++	uint8_t secret[EVP_MAX_MD_SIZE];
++	uint8_t early_traffic_secret[EVP_MAX_MD_SIZE];
++	uint8_t client_handshake_secret[EVP_MAX_MD_SIZE];
++	uint8_t server_handshake_secret[EVP_MAX_MD_SIZE];
++	uint8_t client_traffic_secret_0[EVP_MAX_MD_SIZE];
++	uint8_t server_traffic_secret_0[EVP_MAX_MD_SIZE];
++	uint8_t expected_client_finished[EVP_MAX_MD_SIZE];
 +
 +	/* XXX 13 flags */
 +	/* scts_requested is one if the SCT extension is in the ClientHello. */

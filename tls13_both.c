@@ -24,6 +24,7 @@
 
 #include "../bytestring.h"
 #include "../ssl_locl.h"
+#include "tls13.h"
 
 
 /*
@@ -196,7 +197,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 {
 	SSL *const ssl = hs->ssl;
 	CBS cbs, context, certificate_list;
-	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
+	CBS_init(&cbs, ssl->internal->init_msg, ssl->internal->init_num);
 	if (!CBS_get_u8_length_prefixed(&cbs, &context) ||
 	    CBS_len(&context) != 0) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
@@ -408,7 +409,7 @@ tls13_process_certificate_verify(SSL_HANDSHAKE *hs)
 
 	CBS cbs, signature;
 	uint16_t signature_algorithm;
-	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
+	CBS_init(&cbs, ssl->internal->init_msg, ssl->internal->init_num);
 	if (!CBS_get_u16(&cbs, &signature_algorithm) ||
 	    !CBS_get_u16_length_prefixed(&cbs, &signature) ||
 	    CBS_len(&cbs) != 0) {
@@ -450,6 +451,7 @@ err:
 	OPENSSL_free(msg);
 	return ret;
 }
+#endif
 
 int
 tls13_process_finished(SSL_HANDSHAKE *hs, int use_saved_value)
@@ -471,8 +473,8 @@ tls13_process_finished(SSL_HANDSHAKE *hs, int use_saved_value)
 	}
 
 	int finished_ok =
-	    ssl->init_num == verify_data_len &&
-	    CRYPTO_memcmp(verify_data, ssl->init_msg, verify_data_len) == 0;
+	    ssl->internal->init_num == verify_data_len &&
+	    memcmp(verify_data, ssl->internal->init_msg, verify_data_len) == 0;
 #if defined(BORINGSSL_UNSAFE_FUZZER_MODE)
 	finished_ok = 1;
 #endif
@@ -485,6 +487,7 @@ tls13_process_finished(SSL_HANDSHAKE *hs, int use_saved_value)
 	return 1;
 }
 
+#if 0
 int
 tls13_add_certificate(SSL_HANDSHAKE *hs)
 {
@@ -667,7 +670,7 @@ tls13_receive_key_update(SSL *ssl)
 {
 	CBS cbs;
 	uint8_t key_update_request;
-	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
+	CBS_init(&cbs, ssl->internal->init_msg, ssl->init_num);
 	if (!CBS_get_u8(&cbs, &key_update_request) ||
 	    CBS_len(&cbs) != 0 ||
 	    (key_update_request != SSL_KEY_UPDATE_NOT_REQUESTED &&
