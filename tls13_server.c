@@ -378,9 +378,12 @@ do_select_session(SSL_HANDSHAKE *hs) {
 		break;
 
 	case ssl_ticket_aead_success:
-      /* Carry over authentication information from the previous handshake into
-       * a fresh session. */
-		hs->new_session = SSL_SESSION_dup(session, SSL_SESSION_DUP_AUTH_ONLY);
+		/*
+		 * Carry over authentication information from the
+		 * previous handshake into a fresh session.
+		 */
+		hs->new_session = SSL_SESSION_dup(session,
+		    SSL_SESSION_DUP_AUTH_ONLY);
 
 		if (/* Early data must be acceptable for this ticket. */
 			ssl->cert->enable_early_data &&
@@ -398,13 +401,17 @@ do_select_session(SSL_HANDSHAKE *hs) {
 
 		SSL_SESSION_free(session);
 		if (hs->new_session == NULL) {
-			ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+			ssl3_send_alert(ssl, SSL3_AL_FATAL,
+			    SSL_AD_INTERNAL_ERROR);
 			return ssl_hs_error;
 		}
 
 		ssl->s3->session_reused = 1;
 
-		/* Resumption incorporates fresh key material, so refresh the timeout. */
+		/*
+		 *Resumption incorporates fresh key material, so
+		 * refresh the timeout.
+		 */
 		ssl_session_renew_timeout(ssl, hs->new_session,
 		    ssl->session_ctx->session_psk_dhe_timeout);
 		break;
@@ -425,7 +432,8 @@ do_select_session(SSL_HANDSHAKE *hs) {
 		OPENSSL_free(hs->new_session->tlsext_hostname);
 		hs->new_session->tlsext_hostname = BUF_strdup(hs->hostname);
 		if (hs->new_session->tlsext_hostname == NULL) {
-			ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+			ssl3_send_alert(ssl, SSL3_AL_FATAL,
+			    SSL_AD_INTERNAL_ERROR);
 			return ssl_hs_error;
 		}
 	}
@@ -433,9 +441,11 @@ do_select_session(SSL_HANDSHAKE *hs) {
 	/* Store the initial negotiated ALPN in the session. */
 	if (ssl->s3->alpn_selected != NULL) {
 		hs->new_session->early_alpn =
-		    BUF_memdup(ssl->s3->alpn_selected, ssl->s3->alpn_selected_len);
+		    BUF_memdup(ssl->s3->alpn_selected,
+			ssl->s3->alpn_selected_len);
 		if (hs->new_session->early_alpn == NULL) {
-			ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+			ssl3_send_alert(ssl, SSL3_AL_FATAL,
+			    SSL_AD_INTERNAL_ERROR);
 			return ssl_hs_error;
 		}
 		hs->new_session->early_alpn_len = ssl->s3->alpn_selected_len;
@@ -526,7 +536,8 @@ do_process_second_client_hello(SSL_HANDSHAKE *hs) {
 	if (!resolve_ecdhe_secret(hs, &need_retry, &client_hello)) {
 		if (need_retry) {
 			/* Only send one HelloRetryRequest. */
-			ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_ILLEGAL_PARAMETER);
+			ssl3_send_alert(ssl, SSL3_AL_FATAL,
+			    SSL_AD_ILLEGAL_PARAMETER);
 			OPENSSL_PUT_ERROR(SSL, SSL_R_WRONG_CURVE);
 		}
 		return ssl_hs_error;
@@ -586,11 +597,13 @@ do_send_server_hello(SSL_HANDSHAKE *hs) {
 		CBB sigalgs_cbb;
 		if (!ssl->method->init_message(ssl, &cbb, &body,
 		    SSL3_MT_CERTIFICATE_REQUEST) ||
-		    !CBB_add_u8(&body, 0 /* no certificate_request_context. */) ||
+		    /* no certificate_request_context. */
+		    !CBB_add_u8(&body, 0) ||
 		    !CBB_add_u16_length_prefixed(&body, &sigalgs_cbb) ||
 		    !tls12_add_verify_sigalgs(ssl, &sigalgs_cbb) ||
 		    !ssl_add_client_CA_list(ssl, &body) ||
-		    !CBB_add_u16(&body, 0 /* empty certificate_extensions. */) ||
+		    /* empty certificate_extensions. */
+		    !CBB_add_u16(&body, 0) ||
 		    !ssl_add_message_cbb(ssl, &cbb)) {
 			goto err;
 		}
@@ -643,8 +656,11 @@ static enum ssl_hs_wait_t
 do_send_server_finished(SSL_HANDSHAKE *hs) {
 	SSL *const ssl = hs->ssl;
 	if (!tls13_add_finished(hs) ||
-	    /* Update the secret to the master secret and derive traffic keys. */
-		!tls13_advance_key_schedule(hs, kZeroes, hs->hash_len) ||
+	    /*
+	     *Update the secret to the master secret and derive
+	     * traffic keys.
+	     */
+	    !tls13_advance_key_schedule(hs, kZeroes, hs->hash_len) ||
 	    !tls13_derive_application_secrets(hs) ||
 	    !tls13_set_traffic_key(ssl, evp_aead_seal, hs->server_traffic_secret_0,
 	    hs->hash_len)) {
@@ -652,10 +668,14 @@ do_send_server_finished(SSL_HANDSHAKE *hs) {
 	}
 
 	if (ssl->early_data_accepted) {
-    /* If accepting 0-RTT, we send tickets half-RTT. This gets the tickets on
-     * the wire sooner and also avoids triggering a write on |SSL_read| when
-     * processing the client Finished. This requires computing the client
-     * Finished early. See draft-ietf-tls-tls13-18, section 4.5.1. */
+		/*
+		 * If accepting 0-RTT, we send tickets half-RTT. This
+		 * gets the tickets on the wire sooner and also avoids
+		 * triggering a write on |SSL_read| when processing
+		 * the client Finished. This requires computing the
+		 * client Finished early. See draft-ietf-tls-tls13-18,
+		 * section 4.5.1.
+		 */
 		size_t finished_len;
 		if (!tls13_finished_mac(hs, hs->expected_client_finished, &finished_len,
 			0 /* client */)) {
@@ -667,15 +687,19 @@ do_send_server_finished(SSL_HANDSHAKE *hs) {
 			return ssl_hs_error;
 		}
 
-    /* Feed the predicted Finished into the transcript. This allows us to derive
-     * the resumption secret early and send half-RTT tickets.
-     *
-     * TODO(davidben): This will need to be updated for DTLS 1.3. */
+		/*
+		 * Feed the predicted Finished into the
+		 * transcript. This allows us to derive the resumption
+		 * secret early and send half-RTT tickets.
+		 *
+		 * TODO(davidben): This will need to be updated for DTLS 1.3.
+		 */
 		assert(!SSL_is_dtls(hs->ssl));
 		uint8_t header[4] = {SSL3_MT_FINISHED, 0, 0, hs->hash_len};
-		if (!SSL_TRANSCRIPT_update(&hs->transcript, header, sizeof(header)) ||
-		    !SSL_TRANSCRIPT_update(&hs->transcript, hs->expected_client_finished,
-		    hs->hash_len) ||
+		if (!SSL_TRANSCRIPT_update(&hs->transcript, header,
+		    sizeof(header)) ||
+		    !SSL_TRANSCRIPT_update(&hs->transcript,
+		    hs->expected_client_finished, hs->hash_len) ||
 		    !tls13_derive_resumption_secret(hs) ||
 		    !add_new_session_tickets(hs)) {
 			return ssl_hs_error;
@@ -690,8 +714,8 @@ static enum ssl_hs_wait_t
 do_read_second_client_flight(SSL_HANDSHAKE *hs) {
 	SSL *const ssl = hs->ssl;
 	if (ssl->early_data_accepted) {
-		if (!tls13_set_traffic_key(ssl, evp_aead_open, hs->early_traffic_secret,
-		    hs->hash_len)) {
+		if (!tls13_set_traffic_key(ssl, evp_aead_open,
+		    hs->early_traffic_secret, hs->hash_len)) {
 			return ssl_hs_error;
 		}
 		hs->can_early_write = 1;
@@ -706,12 +730,12 @@ do_read_second_client_flight(SSL_HANDSHAKE *hs) {
 static enum ssl_hs_wait_t
 do_process_end_of_early_data(SSL_HANDSHAKE *hs) {
 	SSL *const ssl = hs->ssl;
-	if (!tls13_set_traffic_key(ssl, evp_aead_open, hs->client_handshake_secret,
-	    hs->hash_len)) {
+	if (!tls13_set_traffic_key(ssl, evp_aead_open,
+	    hs->client_handshake_secret, hs->hash_len)) {
 		return ssl_hs_error;
 	}
-	hs->tls13_state = ssl->early_data_accepted ? state_process_client_finished
-	: state_process_client_certificate;
+	hs->tls13_state = ssl->early_data_accepted ?
+	    state_process_client_finished : state_process_client_certificate;
 	return ssl_hs_read_message;
 }
 
@@ -719,8 +743,11 @@ static enum ssl_hs_wait_t
 do_process_client_certificate(SSL_HANDSHAKE *hs) {
 	SSL *const ssl = hs->ssl;
 	if (!hs->cert_request) {
-    /* OpenSSL returns X509_V_OK when no certificates are requested. This is
-     * classed by them as a bug, but it's assumed by at least NGINX. */
+		/*
+		 * OpenSSL returns X509_V_OK when no certificates are
+		 * requested. This is classed by them as a bug, but
+		 * it's assumed by at least NGINX.
+		 */
 		hs->new_session->verify_result = X509_V_OK;
 
 		/* Skip this state. */
@@ -781,12 +808,14 @@ static enum ssl_hs_wait_t
 do_process_client_finished(SSL_HANDSHAKE *hs) {
 	SSL *const ssl = hs->ssl;
 	if (!ssl_check_message_type(ssl, SSL3_MT_FINISHED) ||
-      /* If early data was accepted, we've already computed the client Finished
-       * and derived the resumption secret. */
-		!tls13_process_finished(hs, ssl->early_data_accepted) ||
+	    /*
+	     * If early data was accepted, we've already computed the
+	     * client Finished and derived the resumption secret.
+	     */
+	    !tls13_process_finished(hs, ssl->early_data_accepted) ||
 	    /* evp_aead_seal keys have already been switched. */
-		!tls13_set_traffic_key(ssl, evp_aead_open, hs->client_traffic_secret_0,
-	    hs->hash_len)) {
+	    !tls13_set_traffic_key(ssl, evp_aead_open,
+	    hs->client_traffic_secret_0, hs->hash_len)) {
 		return ssl_hs_error;
 	}
 
@@ -798,7 +827,10 @@ do_process_client_finished(SSL_HANDSHAKE *hs) {
 			return ssl_hs_error;
 		}
 
-		/* We send post-handshake tickets as part of the handshake in 1-RTT. */
+		/*
+		 * We send post-handshake tickets as part of the
+		 * handshake in 1-RTT.
+		 */
 		hs->tls13_state = state_send_new_session_ticket;
 		return ssl_hs_ok;
 	}
@@ -809,8 +841,10 @@ do_process_client_finished(SSL_HANDSHAKE *hs) {
 
 static enum ssl_hs_wait_t
 do_send_new_session_ticket(SSL_HANDSHAKE *hs) {
-  /* If the client doesn't accept resumption with PSK_DHE_KE, don't send a
-   * session ticket. */
+	/*
+	 * If the client doesn't accept resumption with PSK_DHE_KE, don't send a
+	 * session ticket.
+	 */
 	if (!hs->accept_psk_mode) {
 		hs->tls13_state = state_done;
 		return ssl_hs_ok;
@@ -846,10 +880,12 @@ tls13_server_handshake(SSL_HANDSHAKE *hs) {
 			ret = do_send_server_hello(hs);
 			break;
 		case state_send_server_certificate_verify:
-			ret = do_send_server_certificate_verify(hs, 1 /* first run */);
+			 /* first run */
+			ret = do_send_server_certificate_verify(hs, 1);
 			break;
 		case state_complete_server_certificate_verify:
-			ret = do_send_server_certificate_verify(hs, 0 /* complete */);
+			/* complete */
+			ret = do_send_server_certificate_verify(hs, 0);
 			break;
 		case state_send_server_finished:
 			ret = do_send_server_finished(hs);
