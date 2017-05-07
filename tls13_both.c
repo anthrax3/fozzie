@@ -394,7 +394,6 @@ err:
 	return ret;
 }
 
-#if 0
 int
 tls13_process_certificate_verify(SSL_HANDSHAKE *hs)
 {
