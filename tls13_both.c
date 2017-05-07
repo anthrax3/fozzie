@@ -191,7 +191,7 @@ err:
 	return 0;
 }
 
-# if 0
+# if 0 /* XXX XXX XXX  CRYPTO_BUFFER should die in fire */
 int
 tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 {
@@ -201,7 +201,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 	if (!CBS_get_u8_length_prefixed(&cbs, &context) ||
 	    CBS_len(&context) != 0) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-		SSLerror(ssl, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR)
 		return 0;
 	}
 
@@ -394,36 +394,39 @@ err:
 	EVP_PKEY_free(pkey);
 	return ret;
 }
+#endif
 
 int
 tls13_process_certificate_verify(SSL_HANDSHAKE *hs)
 {
+	uint16_t signature_algorithm;
 	SSL *const ssl = hs->ssl;
-	int ret = 0;
+	int al, sig_ok, ret = 0;
 	uint8_t *msg = NULL;
+	CBS cbs, signature;
 	size_t msg_len;
 
 	if (hs->peer_pubkey == NULL) {
 		goto err;
 	}
 
-	CBS cbs, signature;
-	uint16_t signature_algorithm;
+
 	CBS_init(&cbs, ssl->internal->init_msg, ssl->internal->init_num);
 	if (!CBS_get_u16(&cbs, &signature_algorithm) ||
 	    !CBS_get_u16_length_prefixed(&cbs, &signature) ||
 	    CBS_len(&cbs) != 0) {
-		SSLerror(ssl, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 		goto err;
 	}
-
-	int al;
+#if 0 /* XXX XXX XXX */
 	if (!tls12_check_peer_sigalg(ssl, &al, signature_algorithm)) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, al);
 		goto err;
 	}
 	hs->new_session->peer_signature_algorithm = signature_algorithm;
+#endif
+
 
 	if (!tls13_get_cert_verify_signature_input(
 	    hs, &msg, &msg_len,
@@ -432,7 +435,7 @@ tls13_process_certificate_verify(SSL_HANDSHAKE *hs)
 		goto err;
 	}
 
-	int sig_ok =
+	sig_ok =
 	    ssl_public_key_verify(ssl, CBS_data(&signature), CBS_len(&signature),
 	    signature_algorithm, hs->peer_pubkey, msg, msg_len);
 #if defined(BORINGSSL_UNSAFE_FUZZER_MODE)
@@ -448,10 +451,9 @@ tls13_process_certificate_verify(SSL_HANDSHAKE *hs)
 	ret = 1;
 
 err:
-	OPENSSL_free(msg);
+	free(msg);
 	return ret;
 }
-#endif
 
 int
 tls13_process_finished(SSL_HANDSHAKE *hs, int use_saved_value)
