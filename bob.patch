@@ -10,7 +10,7 @@ RCS file: /cvs/src/lib/libssl/ssl.h,v
 retrieving revision 1.129
 diff -u -p -u -p -r1.129 ssl.h
 --- ssl.h	7 May 2017 04:22:24 -0000	1.129
-+++ ssl.h	7 May 2017 16:48:56 -0000
++++ ssl.h	7 May 2017 17:07:47 -0000
 @@ -790,6 +790,11 @@ void SSL_get0_alpn_selected(const SSL *s
  #define SSL_WRITING	2
  #define SSL_READING	3
@@ -29,7 +29,7 @@ RCS file: /cvs/src/lib/libssl/ssl_locl.h,v
 retrieving revision 1.181
 diff -u -p -u -p -r1.181 ssl_locl.h
 --- ssl_locl.h	7 May 2017 04:22:24 -0000	1.181
-+++ ssl_locl.h	7 May 2017 16:48:56 -0000
++++ ssl_locl.h	7 May 2017 17:07:48 -0000
 @@ -406,6 +406,43 @@ typedef struct ssl_method_internal_st {
  	long (*get_timeout)(void);
  	int (*ssl_version)(void);
@@ -213,3 +213,17 @@ diff -u -p -u -p -r1.181 ssl_locl.h
  } SSL_HANDSHAKE;
  
  typedef struct ssl_ctx_internal_st {
+@@ -898,6 +1059,13 @@ typedef struct ssl3_state_internal_st {
+ 	 */
+ 	unsigned char *alpn_selected;
+ 	unsigned int alpn_selected_len;
++
++	/* XXX 13 */
++	/* key_update_pending is one if we have a KeyUpdate acknowledgment
++	 * outstanding.
++	 */
++	unsigned int key_update_pending:1;
++
+ } SSL3_STATE_INTERNAL;
+ #define S3I(s) (s->s3->internal)
+ 

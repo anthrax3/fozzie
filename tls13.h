@@ -23,7 +23,14 @@ int tls13_init_early_key_schedule(SSL_HANDSHAKE *hs);
 int tls13_advance_key_schedule(SSL_HANDSHAKE *hs, const uint8_t *in,
                                size_t len);
 
-#if 0 /* XXX evp_aead_direction_t barf */
+
+/* evp_aead_direction_t denotes the direction of an AEAD operation. */
+/* XXX XXX XXX sigh */
+enum evp_aead_direction_t {
+  evp_aead_open,
+  evp_aead_seal,
+};
+
 /*
  * tls13_set_traffic_key sets the read or write traffic keys to
  * |traffic_secret|. It returns one on success and zero on error.
@@ -31,7 +38,6 @@ int tls13_advance_key_schedule(SSL_HANDSHAKE *hs, const uint8_t *in,
 int tls13_set_traffic_key(SSL *ssl, enum evp_aead_direction_t direction,
                           const uint8_t *traffic_secret,
                           size_t traffic_secret_len);
-#endif
 
 /*
  * tls13_derive_early_secrets derives the early traffic secret. It
@@ -50,9 +56,7 @@ int tls13_derive_handshake_secrets(SSL_HANDSHAKE *hs);
  * tls13_rotate_traffic_key derives the next read or write traffic
  * secret. It returns one on success and zero on error.
  */
-#if 0 /* XXX evp_aead_direction_t */
 int tls13_rotate_traffic_key(SSL *ssl, enum evp_aead_direction_t direction);
-#endif
 
 /*
  * tls13_derive_application_secrets derives the initial application
@@ -131,6 +135,8 @@ int ssl_public_key_verify(
     uint16_t signature_algorithm, EVP_PKEY *pkey,
     const uint8_t *in, size_t in_len);
 
+
+
 static inline int
 ssl_add_message_cbb(SSL *ssl, CBB *cbb)
 {
@@ -143,3 +149,9 @@ ssl_add_message_cbb(SSL *ssl, CBB *cbb)
 
   return 1;
 }
+
+
+
+/* XXX XXX XXX */
+#define SSL_KEY_UPDATE_NOT_REQUESTED 0
+#define SSL_KEY_UPDATE_REQUESTED 1

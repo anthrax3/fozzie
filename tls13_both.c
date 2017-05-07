@@ -646,7 +646,6 @@ err:
 	return ret;
 }
 
-#if 0
 int
 tls13_add_finished(SSL_HANDSHAKE *hs)
 {
@@ -662,7 +661,7 @@ tls13_add_finished(SSL_HANDSHAKE *hs)
 	}
 
 	CBB cbb, body;
-	if (!ssl->method->init_message(ssl, &cbb, &body, SSL3_MT_FINISHED) ||
+	if (!ssl->method->internal->init_message(ssl, &cbb, &body, SSL3_MT_FINISHED) ||
 	    !CBB_add_bytes(&body, verify_data, verify_data_len) ||
 	    !ssl_add_message_cbb(ssl, &cbb)) {
 		CBB_cleanup(&cbb);
@@ -677,12 +676,12 @@ tls13_receive_key_update(SSL *ssl)
 {
 	CBS cbs;
 	uint8_t key_update_request;
-	CBS_init(&cbs, ssl->internal->init_msg, ssl->init_num);
+	CBS_init(&cbs, ssl->internal->init_msg, ssl->internal->init_num);
 	if (!CBS_get_u8(&cbs, &key_update_request) ||
 	    CBS_len(&cbs) != 0 ||
 	    (key_update_request != SSL_KEY_UPDATE_NOT_REQUESTED &&
 	    key_update_request != SSL_KEY_UPDATE_REQUESTED)) {
-		SSLerror(ssl, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 		return 0;
 	}
@@ -693,10 +692,9 @@ tls13_receive_key_update(SSL *ssl)
 
 	/* Acknowledge the KeyUpdate */
 	if (key_update_request == SSL_KEY_UPDATE_REQUESTED &&
-	    !ssl->s3->key_update_pending) {
+	    !S3I(ssl)->key_update_pending) {
 		CBB cbb, body;
-		if (!ssl->method->init_message(ssl, &cbb, &body, SSL3_MT_KEY_UPDATE) ||
-		    !CBB_add_u8(&body, SSL_KEY_UPDATE_NOT_REQUESTED) ||
+		if (!CBB_add_u8(&body, SSL_KEY_UPDATE_NOT_REQUESTED) ||
 		    !ssl_add_message_cbb(ssl, &cbb) ||
 		    !tls13_rotate_traffic_key(ssl, evp_aead_seal)) {
 			CBB_cleanup(&cbb);
@@ -710,10 +708,12 @@ tls13_receive_key_update(SSL *ssl)
 		 * write progress at different rates. See
 		 * draft-ietf-tls-tls13-18, section 4.5.3.
 		 */
-		ssl->s3->key_update_pending = 1;
+		S3I(ssl)->key_update_pending = 1;
 	}
 	return 1;
 }
+
+#if 0
 
 int
 tls13_post_handshake(SSL *ssl)
