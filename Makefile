@@ -10,7 +10,7 @@ CFLAGS+= -I${.CURDIR} -I{.CURDIR}/..
 
 SRCS=   tls13_both.c
 
-all:	tls13_both.o
+all:	tls13_both.o ssl_privkey.o
 
 .PATH:	${.CURDIR}
 
