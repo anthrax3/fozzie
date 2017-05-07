@@ -25,7 +25,7 @@
 #include "../bytestring.h"
 #include "../ssl_locl.h"
 #include "tls13.h"
-
+#include "pool.h"
 
 /*
  * kMaxKeyUpdates is the number of consecutive KeyUpdates that will be
@@ -191,7 +191,6 @@ err:
 	return 0;
 }
 
-# if 0 /* XXX XXX XXX  CRYPTO_BUFFER should die in fire */
 int
 tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 {
@@ -201,7 +200,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 	if (!CBS_get_u8_length_prefixed(&cbs, &context) ||
 	    CBS_len(&context) != 0) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-		SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR)
+		SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR);
 		return 0;
 	}
 
@@ -394,7 +393,6 @@ err:
 	EVP_PKEY_free(pkey);
 	return ret;
 }
-#endif
 
 int
 tls13_process_certificate_verify(SSL_HANDSHAKE *hs)
