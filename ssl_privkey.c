@@ -68,21 +68,23 @@
 int
 ssl_is_key_type_supported(int key_type)
 {
-	return key_type == EVP_PKEY_RSA || key_type == EVP_PKEY_EC
+	return key_type == EVP_PKEY_RSA || key_type == EVP_PKEY_EC;
 }
 
 static int
 ssl_set_pkey(CERT *cert, EVP_PKEY *pkey)
 {
 	if (!ssl_is_key_type_supported(pkey->type)) {
-		SSL_errorx(SSL_R_UNKNOWN_CERTIFICATE_TYPE);
+		SSLerrorx(SSL_R_UNKNOWN_CERTIFICATE_TYPE);
 		return 0;
 	}
 
 	if (cert->chain != NULL &&
+#if 0 /* XXX XXX XXX */
 	    sk_CRYPTO_BUFFER_value(cert->chain, 0) != NULL &&
+#endif
 	    /* Sanity-check that the private key and the certificate match. */
-		!ssl_cert_check_private_key(cert, pkey)) {
+	    !ssl_cert_check_private_key(cert, pkey)) {
 		return 0;
 	}
 
@@ -100,13 +102,13 @@ SSL_use_RSAPrivateKey(SSL *ssl, RSA *rsa)
 	int ret;
 
 	if (rsa == NULL) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_PASSED_NULL_PARAMETER);
+		SSLerrorx(ERR_R_PASSED_NULL_PARAMETER);
 		return 0;
 	}
 
 	pkey = EVP_PKEY_new();
 	if (pkey == NULL) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_EVP_LIB);
+		SSLerrorx(ERR_R_EVP_LIB);
 		return 0;
 	}
 
@@ -123,7 +125,7 @@ int
 SSL_use_PrivateKey(SSL *ssl, EVP_PKEY *pkey)
 {
 	if (pkey == NULL) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_PASSED_NULL_PARAMETER);
+		SSLerrorx(ERR_R_PASSED_NULL_PARAMETER);
 		return 0;
 	}
 
@@ -134,14 +136,14 @@ int
 SSL_use_PrivateKey_ASN1(int type, SSL *ssl, const uint8_t *der, size_t der_len)
 {
 	if (der_len > LONG_MAX) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_OVERFLOW);
+		SSLerrorx(ERR_R_OVERFLOW);
 		return 0;
 	}
 
 	const uint8_t *p = der;
 	EVP_PKEY *pkey = d2i_PrivateKey(type, NULL, &p, (long)der_len);
 	if (pkey == NULL || p != der + der_len) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_ASN1_LIB);
+		SSLerrorx(ERR_R_ASN1_LIB);
 		EVP_PKEY_free(pkey);
 		return 0;
 	}
@@ -158,13 +160,13 @@ SSL_CTX_use_RSAPrivateKey(SSL_CTX *ctx, RSA *rsa)
 	EVP_PKEY *pkey;
 
 	if (rsa == NULL) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_PASSED_NULL_PARAMETER);
+		SSLerrorx(ERR_R_PASSED_NULL_PARAMETER);
 		return 0;
 	}
 
 	pkey = EVP_PKEY_new();
 	if (pkey == NULL) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_EVP_LIB);
+		SSLerrorx(ERR_R_EVP_LIB);
 		return 0;
 	}
 
@@ -182,7 +184,7 @@ SSL_CTX_use_RSAPrivateKey_ASN1(SSL_CTX *ctx, const uint8_t *der,
 {
 	RSA *rsa = RSA_private_key_from_bytes(der, der_len);
 	if (rsa == NULL) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_ASN1_LIB);
+		SSLerrorx(ERR_R_ASN1_LIB);
 		return 0;
 	}
 
@@ -194,7 +196,7 @@ SSL_CTX_use_RSAPrivateKey_ASN1(SSL_CTX *ctx, const uint8_t *der,
 int
 SSL_CTX_use_PrivateKey(SSL_CTX *ctx, EVP_PKEY *pkey) {
 	if (pkey == NULL) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_PASSED_NULL_PARAMETER);
+		SSLerrorx(ERR_R_PASSED_NULL_PARAMETER);
 		return 0;
 	}
 
@@ -206,14 +208,14 @@ SSL_CTX_use_PrivateKey_ASN1(int type, SSL_CTX *ctx, const uint8_t *der,
     size_t der_len)
 {
 	if (der_len > LONG_MAX) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_OVERFLOW);
+		SSLerrorx(ERR_R_OVERFLOW);
 		return 0;
 	}
 
 	const uint8_t *p = der;
 	EVP_PKEY *pkey = d2i_PrivateKey(type, NULL, &p, (long)der_len);
 	if (pkey == NULL || p != der + der_len) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_ASN1_LIB);
+		SSLerrorx(ERR_R_ASN1_LIB);
 		EVP_PKEY_free(pkey);
 		return 0;
 	}
@@ -245,7 +247,7 @@ set_algorithm_prefs(uint16_t **out_prefs, size_t *out_num_prefs,
 	*out_num_prefs = 0;
 	*out_prefs = BUF_memdup(prefs, num_prefs * sizeof(prefs[0]));
 	if (*out_prefs == NULL) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+		SSLerrorx(ERR_R_MALLOC_FAILURE);
 		return 0;
 	}
 	*out_num_prefs = num_prefs;
@@ -290,7 +292,7 @@ SSL_set_private_key_digest_prefs(SSL *ssl, const int *digest_nids,
 	ssl->cert->num_sigalgs = 0;
 	ssl->cert->sigalgs = OPENSSL_malloc(sizeof(uint16_t) * 2 * num_digests);
 	if (ssl->cert->sigalgs == NULL) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+		SSLerrorx(ERR_R_MALLOC_FAILURE);
 		return 0;
 	}
 
@@ -407,7 +409,7 @@ static int
 setup_ctx(SSL *ssl, EVP_PKEY_CTX *ctx, uint16_t sigalg)
 {
 	if (!pkey_supports_algorithm(ssl, EVP_PKEY_CTX_get0_pkey(ctx), sigalg)) {
-		OPENSSL_PUT_ERROR(SSL, SSL_R_WRONG_SIGNATURE_TYPE);
+		SSLerrorx(SSL_R_WRONG_SIGNATURE_TYPE);
 		return 0;
 	}
 
@@ -451,7 +453,7 @@ ssl_private_key_sign(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
 		const SSL_SIGNATURE_ALGORITHM *alg = get_signature_algorithm(sigalg);
 		if (alg == NULL ||
 		    !legacy_sign_digest_supported(alg)) {
-			OPENSSL_PUT_ERROR(SSL, SSL_R_UNSUPPORTED_PROTOCOL_FOR_CUSTOM_KEY);
+			SSLerrorx(SSL_R_UNSUPPORTED_PROTOCOL_FOR_CUSTOM_KEY);
 			return ssl_private_key_failure;
 		}
 
@@ -502,7 +504,7 @@ enum ssl_private_key_result_t ssl_private_key_decrypt(
 	RSA *rsa = EVP_PKEY_get0_RSA(ssl->cert->privatekey);
 	if (rsa == NULL) {
 		/* Decrypt operations are only supported for RSA keys. */
-		OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+		SSLerrorx(ERR_R_INTERNAL_ERROR);
 		return ssl_private_key_failure;
 	}
 
