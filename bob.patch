@@ -1,0 +1,194 @@
+? ID
+? callbacks.sh
+? fozzie
+? next_state
+? ssl_connect
+? state
+Index: Makefile
+===================================================================
+RCS file: /cvs/src/lib/libssl/Makefile,v
+retrieving revision 1.35
+diff -u -p -u -p -r1.35 Makefile
+--- Makefile	30 Apr 2017 04:44:58 -0000	1.35
++++ Makefile	7 May 2017 14:46:19 -0000
+@@ -4,6 +4,7 @@
+ .ifndef NOMAN
+ SUBDIR=	man
+ .endif
++SUBDIR+= fozzie
+ 
+ PC_FILES=openssl.pc libssl.pc
+ 
+Index: ssl.h
+===================================================================
+RCS file: /cvs/src/lib/libssl/ssl.h,v
+retrieving revision 1.129
+diff -u -p -u -p -r1.129 ssl.h
+--- ssl.h	7 May 2017 04:22:24 -0000	1.129
++++ ssl.h	7 May 2017 14:46:20 -0000
+@@ -790,6 +790,11 @@ void SSL_get0_alpn_selected(const SSL *s
+ #define SSL_WRITING	2
+ #define SSL_READING	3
+ #define SSL_X509_LOOKUP	4
++#define SSL_CHANNEL_ID_LOOKUP 5
++#define SSL_PENDING_SESSION 7
++#define SSL_CERTIFICATE_SELECTION_PENDING 8
++#define SSL_PRIVATE_KEY_OPERATION 9
++#define SSL_PENDING_TICKET 10
+ 
+ /* These will only be used when doing non-blocking IO */
+ #define SSL_want_nothing(s)	(SSL_want(s) == SSL_NOTHING)
+Index: ssl_locl.h
+===================================================================
+RCS file: /cvs/src/lib/libssl/ssl_locl.h,v
+retrieving revision 1.181
+diff -u -p -u -p -r1.181 ssl_locl.h
+--- ssl_locl.h	7 May 2017 04:22:24 -0000	1.181
++++ ssl_locl.h	7 May 2017 14:46:20 -0000
+@@ -406,6 +406,23 @@ typedef struct ssl_method_internal_st {
+ 	long (*get_timeout)(void);
+ 	int (*ssl_version)(void);
+ 
++	/* XXX 13 */
++	/*
++	 * flush_flight flushes the pending flight to the
++	 * transport. It returns one on success and <= 0 on error.
++	 */
++	int (*flush_flight)(SSL *ssl);
++	/*
++	 *expect_flight is called when the handshake expects a flight
++	 * of messages from the peer.
++	 */
++	void (*expect_flight)(SSL *ssl);
++	/*
++	 * received_flight is called when the handshake has received a
++	 * flight of messages from the peer.
++	 */
++	void (*received_flight)(SSL *ssl);
++
+ 	struct ssl3_enc_method *ssl3_enc; /* Extra SSLv3/TLS stuff */
+ } SSL_METHOD_INTERNAL;
+ 
+@@ -431,7 +448,49 @@ typedef struct ssl_session_internal_st {
+ } SSL_SESSION_INTERNAL;
+ #define SSI(s) (s->session->internal)
+ 
++/* XXX 13 enums */
++enum ssl_cert_verify_context_t {
++	ssl_cert_verify_server,
++	ssl_cert_verify_client,
++	ssl_cert_verify_channel_id,
++};
++
++enum ssl_hs_wait_t {
++	ssl_hs_error,
++	ssl_hs_ok,
++	ssl_hs_read_message,
++	ssl_hs_flush,
++	ssl_hs_flush_and_read_message,
++	ssl_hs_x509_lookup,
++	ssl_hs_channel_id_lookup,
++	ssl_hs_private_key_operation,
++	ssl_hs_pending_ticket,
++	ssl_hs_read_end_of_early_data,
++};
++
+ typedef struct ssl_handshake_st {
++	/* ssl is a non-owning pointer to the parent |SSL| object. */
++	SSL *ssl;
++
++	/* do_tls13_handshake runs the TLS 1.3 handshake. On
++	 * completion, it returns |ssl_hs_ok|. Otherwise, it returns a
++	 * value corresponding to what operation is needed to
++	 * progress.
++	 */
++	enum ssl_hs_wait_t (*do_tls13_handshake)(struct ssl_handshake_st *hs);
++
++	/* wait contains the operation |do_tls13_handshake| is
++	 * currently blocking on or |ssl_hs_ok| if none.
++	 */
++	enum ssl_hs_wait_t wait;
++
++	/*
++	 * tls13_state is the internal state for the TLS 1.3
++	 * handshake. Its values depend on |do_tls13_handshake| but the
++	 * starting state is always zero.
++	 */
++	int tls13_state;
++
+ 	/* state contains one of the SSL3_ST_* values. */
+ 	int state;
+ 
+@@ -444,6 +503,72 @@ typedef struct ssl_handshake_st {
+ 	/* key_block is the record-layer key block for TLS 1.2 and earlier. */
+ 	int key_block_len;
+ 	unsigned char *key_block;
++
++	/* XXX 13 flags */
++	/* scts_requested is one if the SCT extension is in the ClientHello. */
++	unsigned int scts_requested:1;
++
++	/* needs_psk_binder if the ClientHello has a placeholder PSK binder to be
++	 * filled in. */
++	unsigned int needs_psk_binder:1;
++
++	unsigned int received_hello_retry_request:1;
++
++	/* accept_psk_mode stores whether the client's PSK mode is compatible with our
++	 * preferences. */
++	unsigned int accept_psk_mode:1;
++
++	/* cert_request is one if a client certificate was requested and zero
++	 * otherwise. */
++	unsigned int cert_request:1;
++
++	/* certificate_status_expected is one if OCSP stapling was negotiated and the
++	 * server is expected to send a CertificateStatus message. (This is used on
++	 * both the client and server sides.) */
++	unsigned int certificate_status_expected:1;
++
++	/* ocsp_stapling_requested is one if a client requested OCSP stapling. */
++	unsigned int ocsp_stapling_requested:1;
++
++	/* should_ack_sni is used by a server and indicates that the SNI extension
++	 * should be echoed in the ServerHello. */
++	unsigned int should_ack_sni:1;
++
++	/* in_false_start is one if there is a pending client handshake in False
++	 * Start. The client may write data at this point. */
++	unsigned int in_false_start:1;
++
++	/* early_data_offered is one if the client sent the early_data extension. */
++	unsigned int early_data_offered:1;
++
++	/* can_early_read is one if application data may be read at this point in the
++	 * handshake. */
++	unsigned int can_early_read:1;
++
++	/* can_early_write is one if application data may be written at this point in
++	 * the handshake. */
++	unsigned int can_early_write:1;
++
++	/* next_proto_neg_seen is one of NPN was negotiated. */
++	unsigned int next_proto_neg_seen:1;
++
++	/* ticket_expected is one if a TLS 1.2 NewSessionTicket message is to be sent
++	 * or received. */
++	unsigned int ticket_expected:1;
++
++	/* v2_clienthello is one if we received a V2ClientHello. */
++	unsigned int v2_clienthello:1;
++
++	/* extended_master_secret is one if the extended master secret extension is
++	 * negotiated in this handshake. */
++	unsigned int extended_master_secret:1;
++
++	/* client_version is the value sent or received in the ClientHello version. */
++	uint16_t client_version;
++
++	/* early_data_read is the amount of early data that has been read by the
++	 * record layer. */
++	uint16_t early_data_read;
+ } SSL_HANDSHAKE;
+ 
+ typedef struct ssl_ctx_internal_st {
