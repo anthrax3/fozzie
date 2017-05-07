@@ -17,15 +17,13 @@
 #include <assert.h>
 #include <string.h>
 
-#include <openssl/bytestring.h>
 #include <openssl/err.h>
 #include <openssl/hkdf.h>
-#include <openssl/mem.h>
 #include <openssl/stack.h>
 #include <openssl/x509.h>
 
-#include "../crypto/internal.h"
-#include "internal.h"
+#include "../bytestring.h"
+#include "../ssl_locl.h"
 
 
 /*
@@ -36,31 +34,36 @@
 static const uint8_t kMaxKeyUpdates = 32;
 
 int
-tls13_handshake(SSL_HANDSHAKE *hs, int *out_early_return) {
+tls13_handshake(SSL_HANDSHAKE *hs, int *out_early_return)
+{
 	SSL *const ssl = hs->ssl;
+
 	for (;;) {
 		/* Resolve the operation the handshake was waiting on. */
 		switch (hs->wait) {
 		case ssl_hs_error:
-			OPENSSL_PUT_ERROR(SSL, SSL_R_SSL_HANDSHAKE_FAILURE);
+			SSLerror(ssl, SSL_R_SSL_HANDSHAKE_FAILURE);
 			return -1;
 
 		case ssl_hs_flush:
 			case ssl_hs_flush_and_read_message: {
-				int ret = ssl->method->flush_flight(ssl);
+				int ret = ssl->method->internal->flush_flight(ssl);
+
 				if (ret <= 0) {
 					return ret;
 				}
 				if (hs->wait != ssl_hs_flush_and_read_message) {
 					break;
 				}
-				ssl->method->expect_flight(ssl);
+				ssl->method->internal->expect_flight(ssl);
 				hs->wait = ssl_hs_read_message;
 				/* Fall-through. */
 			}
 
 			case ssl_hs_read_message: {
-				int ret = ssl->method->ssl_get_message(ssl);
+				/* XXX XXX XXX fix arguments */
+				int ret = ssl->method->internal->ssl_get_message(ssl, 0, 0, 0, 0, 0);
+
 				if (ret <= 0) {
 					return ret;
 				}
@@ -68,7 +71,7 @@ tls13_handshake(SSL_HANDSHAKE *hs, int *out_early_return) {
 			}
 
 			case ssl_hs_read_end_of_early_data: {
-				if (ssl->s3->hs->can_early_read) {
+				if (S3I(ssl)->hs.can_early_read) {
 					/* While we are processing
 					 * early data, the handshake
 					 * returns early.
@@ -81,22 +84,22 @@ tls13_handshake(SSL_HANDSHAKE *hs, int *out_early_return) {
 			}
 
 		case ssl_hs_x509_lookup:
-			ssl->rwstate = SSL_X509_LOOKUP;
+			ssl->internal->rstate = SSL_X509_LOOKUP;
 			hs->wait = ssl_hs_ok;
 			return -1;
 
 		case ssl_hs_channel_id_lookup:
-			ssl->rwstate = SSL_CHANNEL_ID_LOOKUP;
+			ssl->internal->rstate = SSL_CHANNEL_ID_LOOKUP;
 			hs->wait = ssl_hs_ok;
 			return -1;
 
 		case ssl_hs_private_key_operation:
-			ssl->rwstate = SSL_PRIVATE_KEY_OPERATION;
+			ssl->internal->rstate = SSL_PRIVATE_KEY_OPERATION;
 			hs->wait = ssl_hs_ok;
 			return -1;
 
 		case ssl_hs_pending_ticket:
-			ssl->rwstate = SSL_PENDING_TICKET;
+			ssl->internal->rwstate = SSL_PENDING_TICKET;
 			hs->wait = ssl_hs_ok;
 			return -1;
 
@@ -128,20 +131,22 @@ tls13_handshake(SSL_HANDSHAKE *hs, int *out_early_return) {
 
 int tls13_get_cert_verify_signature_input(
     SSL_HANDSHAKE *hs, uint8_t **out, size_t *out_len,
-    enum ssl_cert_verify_context_t cert_verify_context) {
+    enum ssl_cert_verify_context_t cert_verify_context)
+{
+	size_t context_len, context_hash_len, i;
+	uint8_t context_hash[EVP_MAX_MD_SIZE];
+	const uint8_t *context;
 	CBB cbb;
+
 	if (!CBB_init(&cbb, 64 + 33 + 1 + 2 * EVP_MAX_MD_SIZE)) {
 		goto err;
 	}
 
-	for (size_t i = 0; i < 64; i++) {
+	for (i = 0; i < 64; i++) {
 		if (!CBB_add_u8(&cbb, 0x20)) {
 			goto err;
 		}
 	}
-
-	const uint8_t *context;
-	size_t context_len;
 	if (cert_verify_context == ssl_cert_verify_server) {
 		/* Include the NUL byte. */
 		static const char kContext[] =
@@ -165,32 +170,37 @@ int tls13_get_cert_verify_signature_input(
 		goto err;
 	}
 
-	uint8_t context_hash[EVP_MAX_MD_SIZE];
-	size_t context_hash_len;
+#if 0	/*
+	 * XXX XXX decide if we bring in boring's SSL_TRANSCRIPT version
+	 * or rework
+	 */
 	if (!SSL_TRANSCRIPT_get_hash(&hs->transcript, context_hash,
 	    &context_hash_len) ||
 	    !CBB_add_bytes(&cbb, context_hash, context_hash_len) ||
 	    !CBB_finish(&cbb, out, out_len)) {
 		goto err;
 	}
+#endif
 
 	return 1;
 
 err:
-	OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+	SSLerror(hs->ssl, ERR_R_MALLOC_FAILURE);
 	CBB_cleanup(&cbb);
 	return 0;
 }
 
+# if 0
 int
-tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous) {
+tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
+{
 	SSL *const ssl = hs->ssl;
 	CBS cbs, context, certificate_list;
 	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
 	if (!CBS_get_u8_length_prefixed(&cbs, &context) ||
 	    CBS_len(&context) != 0) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-		OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_DECODE_ERROR);
 		return 0;
 	}
 
@@ -202,13 +212,13 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous) {
 	STACK_OF(CRYPTO_BUFFER) *certs = sk_CRYPTO_BUFFER_new_null();
 	if (certs == NULL) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
-		OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+		SSLerror(ssl, ERR_R_MALLOC_FAILURE);
 		goto err;
 	}
 
 	if (!CBS_get_u24_length_prefixed(&cbs, &certificate_list)) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-		OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_DECODE_ERROR);
 		goto err;
 	}
 
@@ -218,7 +228,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous) {
 		    !CBS_get_u16_length_prefixed(&certificate_list, &extensions) ||
 		    CBS_len(&certificate) == 0) {
 			ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-			OPENSSL_PUT_ERROR(SSL, SSL_R_CERT_LENGTH_MISMATCH);
+			SSLerror(ssl, SSL_R_CERT_LENGTH_MISMATCH);
 			goto err;
 		}
 
@@ -226,7 +236,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous) {
 			pkey = ssl_cert_parse_pubkey(&certificate);
 			if (pkey == NULL) {
 				ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-				OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+				SSLerror(ssl, SSL_R_DECODE_ERROR);
 				goto err;
 			}
 			/*
@@ -256,7 +266,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous) {
 			CRYPTO_BUFFER_free(buf);
 			ssl3_send_alert(ssl, SSL3_AL_FATAL,
 			    SSL_AD_INTERNAL_ERROR);
-			OPENSSL_PUT_ERROR(SSL, ERR_R_MALLOC_FAILURE);
+			SSLerror(ssl, ERR_R_MALLOC_FAILURE);
 			goto err;
 		}
 
@@ -283,7 +293,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous) {
 		 */
 		if (have_status_request) {
 			if (ssl->server || !ssl->ocsp_stapling_enabled) {
-				OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
+				SSLerror(ssl, SSL_R_UNEXPECTED_EXTENSION);
 				ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNSUPPORTED_EXTENSION);
 				goto err;
 			}
@@ -309,13 +319,13 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous) {
 
 		if (have_sct) {
 			if (ssl->server || !ssl->signed_cert_timestamps_enabled) {
-				OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_EXTENSION);
+				SSLerror(ssl, SSL_R_UNEXPECTED_EXTENSION);
 				ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNSUPPORTED_EXTENSION);
 				goto err;
 			}
 
 			if (!ssl_is_sct_list_valid(&sct)) {
-				OPENSSL_PUT_ERROR(SSL, SSL_R_ERROR_PARSING_EXTENSION);
+				SSLerror(ssl, SSL_R_ERROR_PARSING_EXTENSION);
 				ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 				goto err;
 			}
@@ -331,7 +341,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous) {
 	}
 
 	if (CBS_len(&cbs) != 0) {
-		OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_DECODE_ERROR);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 		goto err;
 	}
@@ -345,14 +355,14 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous) {
 	certs = NULL;
 
 	if (!ssl->ctx->x509_method->session_cache_objects(hs->new_session)) {
-		OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_DECODE_ERROR);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 		goto err;
 	}
 
 	if (sk_CRYPTO_BUFFER_num(hs->new_session->certs) == 0) {
 		if (!allow_anonymous) {
-			OPENSSL_PUT_ERROR(SSL, SSL_R_PEER_DID_NOT_RETURN_A_CERTIFICATE);
+			SSLerror(ssl, SSL_R_PEER_DID_NOT_RETURN_A_CERTIFICATE);
 			ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_CERTIFICATE_REQUIRED);
 			goto err;
 		}
@@ -384,8 +394,10 @@ err:
 	return ret;
 }
 
+#if 0
 int
-tls13_process_certificate_verify(SSL_HANDSHAKE *hs) {
+tls13_process_certificate_verify(SSL_HANDSHAKE *hs)
+{
 	SSL *const ssl = hs->ssl;
 	int ret = 0;
 	uint8_t *msg = NULL;
@@ -401,7 +413,7 @@ tls13_process_certificate_verify(SSL_HANDSHAKE *hs) {
 	if (!CBS_get_u16(&cbs, &signature_algorithm) ||
 	    !CBS_get_u16_length_prefixed(&cbs, &signature) ||
 	    CBS_len(&cbs) != 0) {
-		OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_DECODE_ERROR);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 		goto err;
 	}
@@ -428,7 +440,7 @@ tls13_process_certificate_verify(SSL_HANDSHAKE *hs) {
 	ERR_clear_error();
 #endif
 	if (!sig_ok) {
-		OPENSSL_PUT_ERROR(SSL, SSL_R_BAD_SIGNATURE);
+		SSLerror(ssl, SSL_R_BAD_SIGNATURE);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECRYPT_ERROR);
 		goto err;
 	}
@@ -441,7 +453,8 @@ err:
 }
 
 int
-tls13_process_finished(SSL_HANDSHAKE *hs, int use_saved_value) {
+tls13_process_finished(SSL_HANDSHAKE *hs, int use_saved_value)
+{
 	SSL *const ssl = hs->ssl;
 	uint8_t verify_data_buf[EVP_MAX_MD_SIZE];
 	const uint8_t *verify_data;
@@ -466,7 +479,7 @@ tls13_process_finished(SSL_HANDSHAKE *hs, int use_saved_value) {
 #endif
 	if (!finished_ok) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECRYPT_ERROR);
-		OPENSSL_PUT_ERROR(SSL, SSL_R_DIGEST_CHECK_FAILED);
+		SSLerror(ssl, SSL_R_DIGEST_CHECK_FAILED);
 		return 0;
 	}
 
@@ -474,14 +487,15 @@ tls13_process_finished(SSL_HANDSHAKE *hs, int use_saved_value) {
 }
 
 int
-tls13_add_certificate(SSL_HANDSHAKE *hs) {
+tls13_add_certificate(SSL_HANDSHAKE *hs)
+{
 	SSL *const ssl = hs->ssl;
 	CBB cbb, body, certificate_list;
 	if (!ssl->method->init_message(ssl, &cbb, &body, SSL3_MT_CERTIFICATE) ||
 	    /* The request context is always empty in the handshake. */
 		!CBB_add_u8(&body, 0) ||
 	    !CBB_add_u24_length_prefixed(&body, &certificate_list)) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+		SSLerror(ssl, ERR_R_INTERNAL_ERROR);
 		goto err;
 	}
 
@@ -500,7 +514,7 @@ tls13_add_certificate(SSL_HANDSHAKE *hs) {
 	    !CBB_add_bytes(&leaf, CRYPTO_BUFFER_data(leaf_buf),
 	    CRYPTO_BUFFER_len(leaf_buf)) ||
 	    !CBB_add_u16_length_prefixed(&certificate_list, &extensions)) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+		SSLerror(ssl, ERR_R_INTERNAL_ERROR);
 		goto err;
 	}
 
@@ -513,7 +527,7 @@ tls13_add_certificate(SSL_HANDSHAKE *hs) {
 		    CRYPTO_BUFFER_data(ssl->cert->signed_cert_timestamp_list),
 		    CRYPTO_BUFFER_len(ssl->cert->signed_cert_timestamp_list)) ||
 		    !CBB_flush(&extensions)) {
-			OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+			SSLerror(ssl, ERR_R_INTERNAL_ERROR);
 			goto err;
 		}
 	}
@@ -529,7 +543,7 @@ tls13_add_certificate(SSL_HANDSHAKE *hs) {
 		    CRYPTO_BUFFER_data(ssl->cert->ocsp_response),
 		    CRYPTO_BUFFER_len(ssl->cert->ocsp_response)) ||
 		    !CBB_flush(&extensions)) {
-			OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+			SSLerror(ssl, ERR_R_INTERNAL_ERROR);
 			goto err;
 		}
 	}
@@ -541,7 +555,7 @@ tls13_add_certificate(SSL_HANDSHAKE *hs) {
 		    !CBB_add_bytes(&child, CRYPTO_BUFFER_data(cert_buf),
 		    CRYPTO_BUFFER_len(cert_buf)) ||
 		    !CBB_add_u16(&certificate_list, 0 /* no extensions */)) {
-			OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+			SSLerror(ssl, ERR_R_INTERNAL_ERROR);
 			goto err;
 		}
 	}
@@ -558,8 +572,8 @@ err:
 }
 
 enum ssl_private_key_result_t
-tls13_add_certificate_verify(SSL_HANDSHAKE *hs,
-int is_first_run) {
+tls13_add_certificate_verify(SSL_HANDSHAKE *hs, int is_first_run)
+{
 	SSL *const ssl = hs->ssl;
 	enum ssl_private_key_result_t ret = ssl_private_key_failure;
 	uint8_t *msg = NULL;
@@ -574,7 +588,7 @@ int is_first_run) {
 	if (!ssl->method->init_message(ssl, &cbb, &body,
 	    SSL3_MT_CERTIFICATE_VERIFY) ||
 	    !CBB_add_u16(&body, signature_algorithm)) {
-		OPENSSL_PUT_ERROR(SSL, ERR_R_INTERNAL_ERROR);
+		SSLerror(ssl, ERR_R_INTERNAL_ERROR);
 		goto err;
 	}
 
@@ -625,7 +639,8 @@ err:
 }
 
 int
-tls13_add_finished(SSL_HANDSHAKE *hs) {
+tls13_add_finished(SSL_HANDSHAKE *hs)
+{
 	SSL *const ssl = hs->ssl;
 	size_t verify_data_len;
 	uint8_t verify_data[EVP_MAX_MD_SIZE];
@@ -633,7 +648,7 @@ tls13_add_finished(SSL_HANDSHAKE *hs) {
 	if (!tls13_finished_mac(hs, verify_data, &verify_data_len,
 		ssl->server)) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
-		OPENSSL_PUT_ERROR(SSL, SSL_R_DIGEST_CHECK_FAILED);
+		SSLerror(ssl, SSL_R_DIGEST_CHECK_FAILED);
 		return 0;
 	}
 
@@ -649,7 +664,8 @@ tls13_add_finished(SSL_HANDSHAKE *hs) {
 }
 
 static int
-tls13_receive_key_update(SSL *ssl) {
+tls13_receive_key_update(SSL *ssl)
+{
 	CBS cbs;
 	uint8_t key_update_request;
 	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
@@ -657,7 +673,7 @@ tls13_receive_key_update(SSL *ssl) {
 	    CBS_len(&cbs) != 0 ||
 	    (key_update_request != SSL_KEY_UPDATE_NOT_REQUESTED &&
 	    key_update_request != SSL_KEY_UPDATE_REQUESTED)) {
-		OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_DECODE_ERROR);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 		return 0;
 	}
@@ -692,11 +708,12 @@ tls13_receive_key_update(SSL *ssl) {
 }
 
 int
-tls13_post_handshake(SSL *ssl) {
+tls13_post_handshake(SSL *ssl)
+{
 	if (ssl->s3->tmp.message_type == SSL3_MT_KEY_UPDATE) {
 		ssl->s3->key_update_count++;
 		if (ssl->s3->key_update_count > kMaxKeyUpdates) {
-			OPENSSL_PUT_ERROR(SSL, SSL_R_TOO_MANY_KEY_UPDATES);
+			SSLerror(ssl, SSL_R_TOO_MANY_KEY_UPDATES);
 			ssl3_send_alert(ssl, SSL3_AL_FATAL,
 			    SSL_AD_UNEXPECTED_MESSAGE);
 			return 0;
@@ -713,6 +730,7 @@ tls13_post_handshake(SSL *ssl) {
 	}
 
 	ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_UNEXPECTED_MESSAGE);
-	OPENSSL_PUT_ERROR(SSL, SSL_R_UNEXPECTED_MESSAGE);
+	SSLerror(ssl, SSL_R_UNEXPECTED_MESSAGE);
 	return 0;
 }
+#endif
