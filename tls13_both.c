@@ -191,6 +191,7 @@ err:
 	return 0;
 }
 
+#if 0 /* XXX XXX XXX */
 int
 tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 {
@@ -204,8 +205,6 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 		return 0;
 	}
 
-	const int retain_sha256 =
-	    ssl->server && ssl->retain_only_sha256_of_client_certs;
 	int ret = 0;
 
 	EVP_PKEY *pkey = NULL;
@@ -218,7 +217,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 
 	if (!CBS_get_u24_length_prefixed(&cbs, &certificate_list)) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-		SSLerror(ssl, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR);
 		goto err;
 	}
 
@@ -236,7 +235,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 			pkey = ssl_cert_parse_pubkey(&certificate);
 			if (pkey == NULL) {
 				ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
-				SSLerror(ssl, SSL_R_DECODE_ERROR);
+				SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR);
 				goto err;
 			}
 			/*
@@ -248,15 +247,6 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 				goto err;
 			}
 
-			if (retain_sha256) {
-				/*
-				 * Retain the hash of the leaf
-				 * certificate if requested.
-				 */
-				SHA256(CBS_data(&certificate),
-				    CBS_len(&certificate),
-				    hs->new_session->peer_sha256);
-			}
 		}
 
 		CRYPTO_BUFFER *buf =
@@ -341,7 +331,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 	}
 
 	if (CBS_len(&cbs) != 0) {
-		SSLerror(ssl, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 		goto err;
 	}
@@ -355,7 +345,7 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 	certs = NULL;
 
 	if (!ssl->ctx->x509_method->session_cache_objects(hs->new_session)) {
-		SSLerror(ssl, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 		goto err;
 	}
@@ -379,8 +369,6 @@ tls13_process_certificate(SSL_HANDSHAKE *hs, int allow_anonymous)
 		goto err;
 	}
 
-	hs->new_session->peer_sha256_valid = retain_sha256;
-
 	if (!ssl->ctx->x509_method->session_verify_cert_chain(hs->new_session,
 	    ssl)) {
 		goto err;
@@ -393,6 +381,7 @@ err:
 	EVP_PKEY_free(pkey);
 	return ret;
 }
+#endif
 
 int
 tls13_process_certificate_verify(SSL_HANDSHAKE *hs)
