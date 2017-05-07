@@ -18,14 +18,11 @@
 #include <limits.h>
 #include <string.h>
 
-#include <openssl/bytestring.h>
-#include <openssl/digest.h>
 #include <openssl/err.h>
-#include <openssl/mem.h>
 #include <openssl/stack.h>
 
-#include "../crypto/internal.h"
-#include "internal.h"
+#include "../ssl_locl.h"
+#include "../bytestring.h"
 
 
 enum client_hs_state_t {
@@ -50,20 +47,23 @@ static const uint8_t kZeroes[EVP_MAX_MD_SIZE] = {0};
 static enum ssl_hs_wait_t
 do_process_hello_retry_request(SSL_HANDSHAKE *hs) {
 	SSL *const ssl = hs->ssl;
+
+#if 0 /* XXX XXX XXX sslv3 */
 	if (ssl->s3->tmp.message_type != SSL3_MT_HELLO_RETRY_REQUEST) {
 		hs->tls13_state = state_process_server_hello;
 		return ssl_hs_ok;
 	}
+#endif
 
 	CBS cbs, extensions;
 	uint16_t server_wire_version;
-	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
+	CBS_init(&cbs, ssl->internal->init_msg, ssl->internal->init_num);
 	if (!CBS_get_u16(&cbs, &server_wire_version) ||
 	    !CBS_get_u16_length_prefixed(&cbs, &extensions) ||
 	    /* HelloRetryRequest may not be empty. */
 	    CBS_len(&extensions) == 0 ||
 	    CBS_len(&cbs) != 0) {
-		OPENSSL_PUT_ERROR(SSL, SSL_R_DECODE_ERROR);
+		SSLerror(ssl, SSL_R_TLSV1_ALERT_DECODE_ERROR);
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_DECODE_ERROR);
 		return ssl_hs_error;
 	}
@@ -178,7 +178,7 @@ do_process_server_hello(SSL_HANDSHAKE *hs) {
 	CBS cbs, server_random, extensions;
 	uint16_t server_wire_version;
 	uint16_t cipher_suite;
-	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
+	CBS_init(&cbs, ssl->internal->init_msg, ssl->internal->init_num);
 	if (!CBS_get_u16(&cbs, &server_wire_version) ||
 	    !CBS_get_bytes(&cbs, &server_random, SSL3_RANDOM_SIZE) ||
 	    !CBS_get_u16(&cbs, &cipher_suite) ||
@@ -365,7 +365,7 @@ do_process_encrypted_extensions(SSL_HANDSHAKE *hs) {
 	}
 
 	CBS cbs;
-	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
+	CBS_init(&cbs, ssl->internal->init_msg, ssl->internal->init_num);
 	if (!ssl_parse_serverhello_tlsext(hs, &cbs)) {
 		OPENSSL_PUT_ERROR(SSL, SSL_R_PARSE_TLSEXT);
 		return ssl_hs_error;
@@ -430,7 +430,7 @@ do_process_certificate_request(SSL_HANDSHAKE *hs) {
 	}
 
 	CBS cbs, context, supported_signature_algorithms;
-	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
+	CBS_init(&cbs, ssl->internal->init_msg, ssl->internal->init_num);
 	if (!CBS_get_u8_length_prefixed(&cbs, &context) ||
 	    /* The request context is always empty during the handshake. */
 		CBS_len(&context) != 0 ||
@@ -712,7 +712,7 @@ tls13_process_new_session_ticket(SSL *ssl) {
 
 	uint32_t server_timeout;
 	CBS cbs, ticket, extensions;
-	CBS_init(&cbs, ssl->init_msg, ssl->init_num);
+	CBS_init(&cbs, ssl->internal->init_msg, ssl->internal->init_num);
 	if (!CBS_get_u32(&cbs, &server_timeout) ||
 	    !CBS_get_u32(&cbs, &session->ticket_age_add) ||
 	    !CBS_get_u16_length_prefixed(&cbs, &ticket) ||
