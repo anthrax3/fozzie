@@ -487,6 +487,7 @@ tls13_process_finished(SSL_HANDSHAKE *hs, int use_saved_value)
 	return 1;
 }
 
+/* XXX XXX XXX CRYPTO_BUFFER  */
 #if 0
 int
 tls13_add_certificate(SSL_HANDSHAKE *hs)
@@ -572,18 +573,22 @@ err:
 	CBB_cleanup(&cbb);
 	return 0;
 }
+#endif
 
 enum ssl_private_key_result_t
 tls13_add_certificate_verify(SSL_HANDSHAKE *hs, int is_first_run)
 {
-	SSL *const ssl = hs->ssl;
 	enum ssl_private_key_result_t ret = ssl_private_key_failure;
-	uint8_t *msg = NULL;
-	size_t msg_len;
-	CBB cbb, body;
-	CBB_zero(&cbb);
-
+	const size_t max_sig_len = EVP_PKEY_size(hs->local_pubkey);
+	enum ssl_private_key_result_t sign_result;
+	uint8_t *msg = NULL, *sig = NULL;
 	uint16_t signature_algorithm;
+	SSL *const ssl = hs->ssl;
+	size_t msg_len, sig_len;
+	CBB cbb, body, child;
+
+
+	CBB_init(&cbb);
 	if (!tls1_choose_signature_algorithm(hs, &signature_algorithm)) {
 		goto err;
 	}
@@ -595,17 +600,15 @@ tls13_add_certificate_verify(SSL_HANDSHAKE *hs, int is_first_run)
 	}
 
 	/* Sign the digest. */
-	CBB child;
-	const size_t max_sig_len = EVP_PKEY_size(hs->local_pubkey);
-	uint8_t *sig;
-	size_t sig_len;
-	if (!CBB_add_u16_length_prefixed(&body, &child) ||
-	    !CBB_reserve(&child, &sig, max_sig_len)) {
+	if (!CBB_add_u16_length_prefixed(&body, &child)) {
+		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
+		goto err;
+	}
+	if ((sig = malloc(max_sig_len)) == NULL) {
 		ssl3_send_alert(ssl, SSL3_AL_FATAL, SSL_AD_INTERNAL_ERROR);
 		goto err;
 	}
 
-	enum ssl_private_key_result_t sign_result;
 	if (is_first_run) {
 		if (!tls13_get_cert_verify_signature_input(
 		    hs, &msg, &msg_len,
@@ -627,7 +630,7 @@ tls13_add_certificate_verify(SSL_HANDSHAKE *hs, int is_first_run)
 		goto err;
 	}
 
-	if (!CBB_did_write(&child, sig_len) ||
+	if (!CBB_add_bytes(&child, sig, sig_len) ||
 	    !ssl_add_message_cbb(ssl, &cbb)) {
 		goto err;
 	}
@@ -635,11 +638,13 @@ tls13_add_certificate_verify(SSL_HANDSHAKE *hs, int is_first_run)
 	ret = ssl_private_key_success;
 
 err:
+	free(sig);
 	CBB_cleanup(&cbb);
 	OPENSSL_free(msg);
 	return ret;
 }
 
+#if 0
 int
 tls13_add_finished(SSL_HANDSHAKE *hs)
 {
