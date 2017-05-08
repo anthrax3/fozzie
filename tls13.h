@@ -104,21 +104,6 @@ int tls13_verify_psk_binder(SSL_HANDSHAKE *hs, SSL_SESSION *session,
                             CBS *binders);
 
 
-/* XXX sigh */
-enum ssl_private_key_result_t {
-	ssl_private_key_success,
-	ssl_private_key_retry,
-	ssl_private_key_failure,
-};
-
-enum ssl_private_key_result_t ssl_private_key_sign(
-    SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
-    uint16_t signature_algorithm, const uint8_t *in, size_t in_len);
-
-enum ssl_private_key_result_t ssl_private_key_complete(SSL *ssl, uint8_t *out,
-                                                       size_t *out_len,
-                                                       size_t max_out);
-
 static inline int
 ssl_add_message_cbb(SSL *ssl, CBB *cbb)
 {
@@ -131,9 +116,6 @@ ssl_add_message_cbb(SSL *ssl, CBB *cbb)
 
   return 1;
 }
-
-
-
 /* XXX XXX XXX */
 #define SSL_KEY_UPDATE_NOT_REQUESTED 0
 #define SSL_KEY_UPDATE_REQUESTED 1

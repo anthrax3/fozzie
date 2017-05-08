@@ -108,6 +108,7 @@ ssl_private_key_sign(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
 	EVP_PKEY_CTX_free(ctx);
 	return ret ? ssl_private_key_success : ssl_private_key_failure;
 }
+#endif
 
 int
 ssl_public_key_verify(SSL *ssl, const uint8_t *signature,
@@ -123,6 +124,7 @@ ssl_public_key_verify(SSL *ssl, const uint8_t *signature,
 	return ret;
 }
 
+#if 0
 enum ssl_private_key_result_t
 ssl_private_key_complete(SSL *ssl, uint8_t *out, size_t *out_len,
     size_t max_out)
