@@ -63,8 +63,10 @@
 #include <openssl/evp.h>
 
 #include "../ssl_locl.h"
+#include "../../libcrypto/asn1/asn1_locl.h"
 #include "tls13.h"
 
+#if 0 /* XXX unfuzzle cert versus SSL */
 enum ssl_private_key_result_t
 ssl_private_key_sign(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
     uint16_t sigalg, const uint8_t *in, size_t in_len)
@@ -128,9 +130,9 @@ ssl_private_key_complete(SSL *ssl, uint8_t *out, size_t *out_len,
 	/* Only custom keys may be asynchronous. */
 	return ssl->cert->key_method->complete(ssl, out, out_len, max_out);
 }
-
+#endif
 /*
- * ssl_cert_skip_to_spki parses a DER-encoded, X.509 certificate from
+ * Ss_cert_skip_to_spki parses a DER-encoded, X.509 certificate from
  * |in| and positions |*out_tbs_cert| to cover the TBSCertificate,
  * starting at the subjectPublicKeyInfo.
  */
@@ -178,10 +180,44 @@ static int ssl_cert_skip_to_spki(const CBS *in, CBS *out_tbs_cert) {
   return 1;
 }
 
+static int parse_key_type(CBS *cbs, int *out_type)
+{
+	CBS oid;
+	unsigned int i;
+
+	if (!CBS_get_asn1(cbs, &oid, CBS_ASN1_OBJECT)) {
+		return 0;
+	}
+#if 0 /* XXX XXX XXX work around EVP_PKEY_ASN1 goo */
+	for (i = 0; i < OPENSSL_ARRAY_SIZE(kASN1Methods); i++) {
+		const EVP_PKEY_ASN1_METHOD *method = kASN1Methods[i];
+		if (CBS_len(&oid) == method->oid_len &&
+		    memcmp(CBS_data(&oid), method->oid, method->oid_len) == 0) {
+			*out_type = method->pkey_id;
+			return 1;
+		}
+	}
+#endif
+
+  return 0;
+}
+
+
+static EVP_PKEY *
+EVP_parse_public_key(CBS *cbs)
+{
+	/* Parse the SubjectPublicKeyInfo. */
+	EVP_PKEY *ret;
+	const unsigned char * data;
+
+	data = CBS_data(cbs);
+	return d2i_PUBKEY(NULL, &data, CBS_len(cbs));
+}
+
 EVP_PKEY *ssl_cert_parse_pubkey(const CBS *in) {
   CBS buf = *in, tbs_cert;
   if (!ssl_cert_skip_to_spki(&buf, &tbs_cert)) {
-    SSLerrorx(SSL_R_CANNOT_PARSE_LEAF_CERT);
+//    SSLerrorx(SSL_R_CANNOT_PARSE_LEAF_CERT);
     return NULL;
   }
 
