@@ -10,7 +10,7 @@ CFLAGS+= -I${.CURDIR} -I{.CURDIR}/..
 
 SRCS=   tls13_both.c
 
-all:	tls13_both.o pool.o boring_glue.o
+all:	tls13_both.o pool.o
 
 .PATH:	${.CURDIR}
 
