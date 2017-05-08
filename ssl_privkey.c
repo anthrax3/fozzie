@@ -63,8 +63,9 @@
 #include <openssl/evp.h>
 
 #include "../ssl_locl.h"
+#include "tls13.h"
 
-
+#if 0
 int
 ssl_is_key_type_supported(int key_type)
 {
@@ -80,9 +81,7 @@ ssl_set_pkey(CERT *cert, EVP_PKEY *pkey)
 	}
 
 	if (cert->chain != NULL &&
-#if 0 /* XXX XXX XXX */
 	    sk_CRYPTO_BUFFER_value(cert->chain, 0) != NULL &&
-#endif
 	    /* Sanity-check that the private key and the certificate match. */
 	    !ssl_cert_check_private_key(cert, pkey)) {
 		return 0;
@@ -436,6 +435,7 @@ legacy_sign_digest_supported(const SSL_SIGNATURE_ALGORITHM *alg)
 	    !alg->is_rsa_pss;
 }
 
+#endif
 enum ssl_private_key_result_t
 ssl_private_key_sign(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
     uint16_t sigalg, const uint8_t *in, size_t in_len)
@@ -478,6 +478,7 @@ ssl_private_key_sign(SSL *ssl, uint8_t *out, size_t *out_len, size_t max_out,
 	return ret ? ssl_private_key_success : ssl_private_key_failure;
 }
 
+#if 0
 int
 ssl_public_key_verify(SSL *ssl, const uint8_t *signature,
     size_t signature_len, uint16_t signature_algorithm,
@@ -515,7 +516,7 @@ enum ssl_private_key_result_t ssl_private_key_decrypt(
 	}
 	return ssl_private_key_success;
 }
-
+#endif
 enum ssl_private_key_result_t
 ssl_private_key_complete(SSL *ssl, uint8_t *out, size_t *out_len,
     size_t max_out)
@@ -523,8 +524,9 @@ ssl_private_key_complete(SSL *ssl, uint8_t *out, size_t *out_len,
 	/* Only custom keys may be asynchronous. */
 	return ssl->cert->key_method->complete(ssl, out, out_len, max_out);
 }
-
+#if 0
 int
+
 ssl_private_key_supports_signature_algorithm(SSL_HANDSHAKE *hs,
 uint16_t sigalg) {
 	SSL *const ssl = hs->ssl;
@@ -560,3 +562,4 @@ uint16_t sigalg) {
 
 	return 1;
 }
+#endif
